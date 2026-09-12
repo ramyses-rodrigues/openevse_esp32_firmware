@@ -49,6 +49,10 @@ typedef uint32_t EvseClient;
 #define EvseManager_Priority_API       500
 #define EvseManager_Priority_MQTT      500
 #define EvseManager_Priority_Ohm       500
+// Schedule-activated divert/shaper: must outrank the scheduler's base Timer
+// claim (100) and API pokes (500), but stay below Manual/RFID/OCPP so an
+// explicit human action can always override a timer window.
+#define EvseManager_Priority_TimerFeature 900
 #define EvseManager_Priority_Manual   1000
 #define EvseManager_Priority_RFID     1030
 #define EvseManager_Priority_OCPP     1050
@@ -277,6 +281,15 @@ class EvseManager : public MicroTasks::Task
     EvseState getState(EvseClient client = EvseClient_NULL);
     uint32_t getChargeCurrent(EvseClient client = EvseClient_NULL);
     uint32_t getMaxCurrent(EvseClient client = EvseClient_NULL);
+
+    // Get the client whose claim is currently setting the state/charge current,
+    // EvseClient_NULL if no active claim sets the property
+    EvseClient getStateClient() {
+      return _state_client;
+    }
+    EvseClient getChargeCurrentClient() {
+      return _charge_current_client;
+    }
 
     bool serializeClaims(DynamicJsonDocument &doc);
     bool serializeClaim(DynamicJsonDocument &doc, EvseClient client);
@@ -579,9 +592,11 @@ class EvseManager : public MicroTasks::Task
       return _sender;
     }
 
-    // Get the OpenEVSE API
+    // Get the OpenEVSE API. Must be the instance the monitor initialised with
+    // the RAPI sender; the global OpenEVSE object is never begin()-ed so its
+    // commands are silently dropped.
     OpenEVSEClass &getOpenEVSE() {
-      return OpenEVSE;
+      return _openevse;
     }
 
     // Register for events
